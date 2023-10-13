@@ -3,12 +3,14 @@ package com.example.imagepro;
 import android.content.res.AssetFileDescriptor;
 import android.content.res.AssetManager;
 import android.graphics.Bitmap;
+import android.util.Log;
 
 import org.checkerframework.checker.units.qual.A;
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.Point;
+import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 import org.tensorflow.lite.Interpreter;
@@ -34,6 +36,8 @@ public class  objectDetectorClass {
     // this is used to load model and predict
     private Interpreter interpreter;
     // store all label in array
+    private Interpreter interpreter2;
+    //To load model
     private List<String> labelList;
     private int INPUT_SIZE;
     private int PIXEL_SIZE=3; // for RGB
@@ -43,9 +47,11 @@ public class  objectDetectorClass {
     private GpuDelegate gpuDelegate;
     private int height=0;
     private  int width=0;
+    private int Classification_Input_Size=0;
 
-    objectDetectorClass(AssetManager assetManager,String modelPath, String labelPath,int inputSize) throws IOException{
+    objectDetectorClass(AssetManager assetManager,String modelPath, String labelPath,int inputSize,String classification_model,int classification_input_size) throws IOException{
         INPUT_SIZE=inputSize;
+        Classification_Input_Size=classification_input_size;
         // use to define gpu or cpu // no. of threads
         Interpreter.Options options=new Interpreter.Options();
         gpuDelegate=new GpuDelegate();
@@ -56,6 +62,10 @@ public class  objectDetectorClass {
         // load labelmap
         labelList=loadLabelList(assetManager,labelPath);
 
+        Interpreter.Options options2= new Interpreter.Options();
+        options2.setNumThreads(2);
+        //load model
+        interpreter2=new Interpreter(loadModelFile(assetManager,classification_model),options2);
 
     }
 
@@ -150,6 +160,7 @@ public class  objectDetectorClass {
         // loop through each object
         // as output has only 10 boxes
         for (int i=0;i<10;i++){
+            //looping through each hand
             float class_value=(float) Array.get(Array.get(Object_class,0),i);
             float score_value=(float) Array.get(Array.get(score,0),i);
             // define threshold for score
@@ -160,15 +171,54 @@ public class  objectDetectorClass {
                 Object box1=Array.get(Array.get(value,0),i);
                 // we are multiplying it with Original height and width of frame
 
-                float top=(float) Array.get(box1,0)*height;
-                float left=(float) Array.get(box1,1)*width;
-                float bottom=(float) Array.get(box1,2)*height;
-                float right=(float) Array.get(box1,3)*width;
-                // draw rectangle in Original frame //  starting point    // ending point of box  // color of box       thickness
-                Imgproc.rectangle(rotated_mat_image,new Point(left,top),new Point(right,bottom),new Scalar(0, 255, 0, 255),2);
+                float y1=(float) Array.get(box1,0)*height;
+                float x1=(float) Array.get(box1,1)*width;
+                float y2=(float) Array.get(box1,2)*height;
+                float x2=(float) Array.get(box1,3)*width;
+
+                // set boundary
+                if(y1<0){
+                    y1=0;
+                }
+                if(x1<0){
+                    x1=0;
+                }
+                if(x2>width){
+                    x2=width;
+                }
+                if(y2>height){
+                    y2=height;
+                }
+               //height of box and width
+               //(x1,y1) is starting point (x2,y2)
+                float w1=x2-x1;
+                float h1=y2-y1;
+                //Crop image
+                Rect cropped_roi=new Rect((int)x1,(int)y1,(int)w1,(int)h1);
+                Mat cropped=new Mat(rotated_mat_image,cropped_roi).clone();
+                //Convert cropped map to Bitmap
+                Bitmap bitmap1=null;
+                bitmap1=Bitmap.createBitmap(cropped.cols(),cropped.rows(),Bitmap.Config.ARGB_8888);
+                Utils.matToBitmap(cropped,bitmap1);
+
+                Bitmap scaledBitmap1=Bitmap.createScaledBitmap(bitmap1,Classification_Input_Size,Classification_Input_Size,false);
+                //Converting scaledBitmap1 to bytebuffer
+                ByteBuffer byteBuffer1=convertBitmapToByteBuffer1(scaledBitmap1);
+
+                float[][] output_class_value=new float[1][1];
+
+                interpreter2.run(byteBuffer1,output_class_value);
+
+                Log.d("objectDetectionClass","output_class_value : "+output_class_value);
+
+                String sign_value=get_alphanets(output_class_value[0][0]);
+                Imgproc.putText(rotated_mat_image,""+sign_value,new Point(x1+10,y1+40),2,1.5,new Scalar(255, 255, 255, 255),2);
+                Imgproc.rectangle(rotated_mat_image,new Point(x1,y1),new Point(x2,y2),new Scalar(0, 255, 0, 255),2);
                 // write text on frame
                                                 // string of class name of object  // starting point                         // color of text           // size of text
-                Imgproc.putText(rotated_mat_image,labelList.get((int) class_value),new Point(left,top),3,1,new Scalar(255, 0, 0, 255),2);
+               // Imgproc.putText(rotated_mat_image,labelList.get((int) class_value),new Point(left,top),3,1,new Scalar(255, 0, 0, 255),2);
+
+
             }
 
         }
@@ -182,6 +232,66 @@ public class  objectDetectorClass {
         b.release();
         // Now for second change go to CameraBridgeViewBase
         return mat_image;
+    }
+
+    private String get_alphanets(float sig_v) {
+        String val="";
+        if(sig_v>=-0.5 & sig_v<0.5) {
+            val="A";}
+        else if(sig_v>=0.5 & sig_v<1.5){
+            val="B";
+        }
+        else if(sig_v>=1.5 & sig_v<2.5){
+            val="C";
+        }
+        else if(sig_v>=2.5 & sig_v<3.5){
+            val="D";
+        }
+        else if (sig_v >= 3.5 & sig_v < 4.5) {
+            val = "E";
+        } else if (sig_v >= 4.5 & sig_v < 5.5) {
+            val = "F";
+        } else if (sig_v >= 5.5 & sig_v < 6.5) {
+            val = "G";
+        } else if (sig_v >= 6.5 & sig_v < 7.5) {
+            val = "H";
+        } else if (sig_v >= 7.5 & sig_v < 8.5) {
+            val = "I";
+        } else if (sig_v >= 8.5 & sig_v < 9.5) {
+            val = "J";
+        } else if (sig_v >= 9.5 & sig_v < 10.5) {
+            val = "K";
+        } else if (sig_v >= 10.5 & sig_v < 11.5) {
+            val = "L";
+        } else if (sig_v >= 11.5 & sig_v < 12.5) {
+            val = "M";
+        } else if (sig_v >= 12.5 & sig_v < 13.5) {
+            val = "N";
+        } else if (sig_v >= 13.5 & sig_v < 14.5) {
+            val = "O";
+        } else if (sig_v >= 14.5 & sig_v < 15.5) {
+            val = "P";
+        } else if (sig_v >= 15.5 & sig_v < 16.5) {
+            val = "Q";
+        } else if (sig_v >= 16.5 & sig_v < 17.5) {
+            val = "R";
+        } else if (sig_v >= 17.5 & sig_v < 18.5) {
+            val = "S";
+        } else if (sig_v >= 18.5 & sig_v < 19.5) {
+            val = "T";
+        } else if (sig_v >= 19.5 & sig_v < 20.5) {
+            val = "U";
+        } else if (sig_v >= 20.5 & sig_v < 21.5) {
+            val = "V";
+        } else if (sig_v >= 21.5 & sig_v < 22.5) {
+            val = "W";
+        } else if (sig_v >= 22.5 & sig_v < 23.5) {
+            val = "X";
+        } else {
+            val = "Y";
+        }
+        //Do this
+        return val;
     }
 
     private ByteBuffer convertBitmapToByteBuffer(Bitmap bitmap) {
@@ -222,6 +332,44 @@ public class  objectDetectorClass {
             }
         }
     return byteBuffer;
+    }
+
+    private ByteBuffer convertBitmapToByteBuffer1(Bitmap bitmap) {
+        ByteBuffer byteBuffer;
+        // some model input should be quant=0  for some quant=1
+        // for this quant=0
+        // Change quant=1
+        // As we are scaling image from 0-255 to 0-1
+        int quant=1;
+        int size_images=Classification_Input_Size;
+        if(quant==0){
+            byteBuffer=ByteBuffer.allocateDirect(1*size_images*size_images*3);
+        }
+        else {
+            byteBuffer=ByteBuffer.allocateDirect(4*1*size_images*size_images*3);
+        }
+        byteBuffer.order(ByteOrder.nativeOrder());
+        int[] intValues=new int[size_images*size_images];
+        bitmap.getPixels(intValues,0,bitmap.getWidth(),0,0,bitmap.getWidth(),bitmap.getHeight());
+        int pixel=0;
+
+        for (int i=0;i<size_images;++i){
+            for (int j=0;j<size_images;++j){
+                final  int val=intValues[pixel++];
+                if(quant==0){
+                    byteBuffer.put((byte) ((val>>16)&0xFF));
+                    byteBuffer.put((byte) ((val>>8)&0xFF));
+                    byteBuffer.put((byte) (val&0xFF));
+                }
+                else {
+                    // paste this
+                    byteBuffer.putFloat((((val >> 16) & 0xFF)));
+                    byteBuffer.putFloat((((val >> 8) & 0xFF)));
+                    byteBuffer.putFloat((((val) & 0xFF)));
+                }
+            }
+        }
+        return byteBuffer;
     }
 }
 // Next video is about drawing box and labeling it
