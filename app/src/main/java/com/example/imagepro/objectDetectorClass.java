@@ -31,19 +31,13 @@ import java.util.Map;
 import java.util.TreeMap;
 
 public class  objectDetectorClass {
-    // should start from small letter
-
-    // this is used to load model and predict
     private Interpreter interpreter;
-    // store all label in array
     private Interpreter interpreter2;
-    //To load model
     private List<String> labelList;
     private int INPUT_SIZE;
     private int PIXEL_SIZE=3; // for RGB
     private int IMAGE_MEAN=0;
     private  float IMAGE_STD=255.0f;
-    // use to initialize gpu in app
     private GpuDelegate gpuDelegate;
     private int height=0;
     private  int width=0;
@@ -52,7 +46,6 @@ public class  objectDetectorClass {
     objectDetectorClass(AssetManager assetManager,String modelPath, String labelPath,int inputSize,String classification_model,int classification_input_size) throws IOException{
         INPUT_SIZE=inputSize;
         Classification_Input_Size=classification_input_size;
-        // use to define gpu or cpu // no. of threads
         Interpreter.Options options=new Interpreter.Options();
         gpuDelegate=new GpuDelegate();
         options.addDelegate(gpuDelegate);
@@ -97,9 +90,6 @@ public class  objectDetectorClass {
     public Mat recognizeImage(Mat mat_image){
         // Rotate original image by 90 degree get get portrait frame
 
-        // This change was done in video: Does Your App Keep Crashing? | Watch This Video For Solution.
-        // This will fix crashing problem of the app
-
         Mat rotated_mat_image=new Mat();
 
         Mat a=mat_image.t();
@@ -107,8 +97,6 @@ public class  objectDetectorClass {
         // Release mat
         a.release();
 
-        // if you do not do this process you will get improper prediction, less no. of object
-        // now convert it to bitmap
         Bitmap bitmap=null;
         bitmap=Bitmap.createBitmap(rotated_mat_image.cols(),rotated_mat_image.rows(),Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(rotated_mat_image,bitmap);
@@ -125,14 +113,12 @@ public class  objectDetectorClass {
         // defining output
         // 10: top 10 object detected
         // 4: there coordinate in image
-      //  float[][][]result=new float[1][10][4];
+        //  float[][][]result=new float[1][10][4];
         Object[] input=new Object[1];
         input[0]=byteBuffer;
 
         Map<Integer,Object> output_map=new TreeMap<>();
-        // we are not going to use this method of output
-        // instead we create treemap of three array (boxes,score,classes)
-
+        
         float[][][]boxes =new float[1][10][4];
         // 10: top 10 object detected
         // 4: there coordinate in image
@@ -148,25 +134,16 @@ public class  objectDetectorClass {
 
         // now predict
         interpreter.runForMultipleInputsOutputs(input,output_map);
-        // Before watching this video please watch my previous 2 video of
-        //      1. Loading tensorflow lite model
-        //      2. Predicting object
-        // In this video we will draw boxes and label it with it's name
-
         Object value=output_map.get(0);
         Object Object_class=output_map.get(1);
         Object score=output_map.get(2);
 
-        // loop through each object
-        // as output has only 10 boxes
         for (int i=0;i<10;i++){
             //looping through each hand
             float class_value=(float) Array.get(Array.get(Object_class,0),i);
             float score_value=(float) Array.get(Array.get(score,0),i);
             // define threshold for score
 
-            // Here you can change threshold according to your model
-            // Now we will do some change to improve app
             if(score_value>0.5){
                 Object box1=Array.get(Array.get(value,0),i);
                 // we are multiplying it with Original height and width of frame
@@ -222,11 +199,6 @@ public class  objectDetectorClass {
             }
 
         }
-        // select device and run
-
-        // before returning rotate back by -90 degree
-
-        // Do same here
         Mat b=rotated_mat_image.t();
         Core.flip(b,mat_image,0);
         b.release();
@@ -290,7 +262,6 @@ public class  objectDetectorClass {
         } else {
             val = "Y";
         }
-        //Do this
         return val;
     }
 
@@ -313,8 +284,6 @@ public class  objectDetectorClass {
         bitmap.getPixels(intValues,0,bitmap.getWidth(),0,0,bitmap.getWidth(),bitmap.getHeight());
         int pixel=0;
 
-        // some error
-        //now run
         for (int i=0;i<size_images;++i){
             for (int j=0;j<size_images;++j){
                 final  int val=intValues[pixel++];
@@ -372,5 +341,3 @@ public class  objectDetectorClass {
         return byteBuffer;
     }
 }
-// Next video is about drawing box and labeling it
-// If you have any problem please inform me
